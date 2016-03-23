@@ -1,1 +1,3 @@
-# videojs-chromecast
+# Videojs Chromecast
+
+Chromecast tech for videojs
