@@ -1,4 +1,5 @@
 /*! videojs-chromecast - v0.0.1 - 2016-03-23*/
+/*! videojs-chromecast - v0.0.1 - 2016-03-23*/
 (function (window, videojs, document, undefined) {
   'use strict';
 
@@ -12,6 +13,7 @@
 
       this.apiMedia = this.options_.source.apiMedia;
       this.apiSession = this.options_.source.apiSession;
+      this.currentMediaTime = this.options_.source.currentTime;
       this.receiver = this.apiSession.receiver.friendlyName;
 
       this.apiMedia.addUpdateListener(this.onMediaStatusUpdate.bind(this));
@@ -149,9 +151,6 @@
     },
 
     currentTime: function() {
-      if (!this.apiMedia) {
-        return 0;
-      }
       return this.currentMediaTime;
     },
 
