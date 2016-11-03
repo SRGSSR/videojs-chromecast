@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.0.1 - 2016-11-03*/
+/*! videojs-chromecast - v0.1.0 - 2016-11-03*/
 (function (window, videojs, document, undefined) {
   'use strict';
 
@@ -46,7 +46,7 @@
     onSessionUpdate: function(isAlive) {
       if (!this.apiMedia) {
         return;
-      } 
+      }
 
       if (!isAlive) {
         return this.onStopAppSuccess();
