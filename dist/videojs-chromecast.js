@@ -1,5 +1,4 @@
-/*! videojs-chromecast - v0.0.1 - 2016-03-23*/
-/*! videojs-chromecast - v0.0.1 - 2016-03-23*/
+/*! videojs-chromecast - v0.0.1 - 2016-11-03*/
 (function (window, videojs, document, undefined) {
   'use strict';
 
@@ -47,7 +46,8 @@
     onSessionUpdate: function(isAlive) {
       if (!this.apiMedia) {
         return;
-      }
+      } 
+
       if (!isAlive) {
         return this.onStopAppSuccess();
       }
@@ -56,7 +56,26 @@
     onStopAppSuccess: function() {
       this.stopTrackingCurrentTime();
       clearInterval(this.timer);
-      this.apiMedia = null;
+      this.apiMedia.stop();
+      this.apiSession.stop();
+    },
+
+    onIdle: function() {
+      if (!this.apiMedia) {
+        return;
+      }
+
+      switch(this.apiMedia.idleReason) {
+        case chrome.cast.media.IdleReason.CANCELLED:
+        case chrome.cast.media.IdleReason.INTERRUPTED:
+        case chrome.cast.media.IdleReason.ERROR:
+          this.trigger('error');
+          break;
+        case chrome.cast.media.IdleReason.FINISHED:
+          this._ended = true;
+          this.trigger('ended');
+      }
+      this.onStopAppSuccess();
     },
 
     onMediaStatusUpdate: function() {
@@ -69,9 +88,7 @@
           this.trigger('waiting');
           break;
         case chrome.cast.media.PlayerState.IDLE:
-          this.currentMediaTime = 0;
-          this.trigger('timeupdate');
-          this.onStopAppSuccess();
+          this.onIdle();
           break;
         case chrome.cast.media.PlayerState.PAUSED:
           this.trigger('pause');
@@ -87,6 +104,10 @@
 
     src: function(src) {
 
+    },
+
+    currentSrc: function() {
+      return this.options_.source.src;
     },
 
     seekable: function() {
@@ -151,7 +172,7 @@
     },
 
     currentTime: function() {
-      return this.currentMediaTime;
+      return (!this._ended) ? this.currentMediaTime : this.duration();
     },
 
     setCurrentTime: function(position) {
@@ -190,6 +211,10 @@
 
     volume: function() {
       return this.volume_;
+    },
+
+    ended: function() {
+      return this._ended || this.duration() <= this.currentMediaTime;
     },
 
     duration: function() {
@@ -241,6 +266,9 @@
     },
 
     dispose: function() {
+      this.onStopAppSuccess();
+      this.apiMedia = undefined;
+      this.apiSession = undefined;
       this.resetSrc_(Function.prototype);
       Tech.prototype.dispose.apply(this, arguments);
     }
