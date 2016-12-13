@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.1.0 - 2016-11-03*/
+/*! videojs-chromecast - v0.1.0 - 2016-12-13*/
 (function (window, videojs, document, undefined) {
   'use strict';
 
