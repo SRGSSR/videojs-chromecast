@@ -310,4 +310,4 @@
 
   Component.registerComponent('Chromecast', Chromecast);
   Tech.registerTech('Chromecast', Chromecast);
-})(window, videojs, document);
+})(window, window.videojs, document);
