@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.1.0 - 2016-12-13*/
+/*! videojs-chromecast - v0.1.0 - 2016-12-19*/
 (function (window, videojs, document, undefined) {
   'use strict';
 
@@ -136,15 +136,15 @@
     },
 
     onTrackSuccess: function(e) {
-      // return _videoJs2['default'].log('track added');
+
     },
 
     onTrackError: function(e) {
-      // return _videoJs2['default'].log('Cast track Error: ' + JSON.stringify(e));
+
     },
 
     castError: function(e) {
-      // return _videoJs2['default'].log('Cast Error: ' + JSON.stringify(e));
+
     },
 
     play: function() {
@@ -206,7 +206,7 @@
     },
 
     onSeekSuccess: function(position) {
-      //_videoJs2['default'].log('seek success' + position);
+
     },
 
     volume: function() {
@@ -246,7 +246,7 @@
     },
 
     mediaCommandSuccessCallback: function(information) {
-      //_videoJs2['default'].log(information);
+
     },
 
     muted: function() {
