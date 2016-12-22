@@ -204,8 +204,10 @@
     };
 
     this.src = function(source) {
-      this.stopCasting();
-      Player.src.call(this, source);
+      if (source) {
+        this.stopCasting();
+      }
+      return Player.src.call(this, source);
     };
 
     if (!this.isReady_) {
