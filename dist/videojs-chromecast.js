@@ -180,7 +180,7 @@
     };
 
     this.canCastCurrentSrc_ = function() {
-      var canPlaySource = Chromecast.canPlaySource(this.currentSrc());
+      var canPlaySource = Chromecast.canPlaySource(this.currentSource());
       return (canPlaySource === 'maybe' || canPlaySource === 'probably');
     };
 
