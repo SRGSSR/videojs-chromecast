@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.1.0 - 2016-12-22*/
+/*! videojs-chromecast - v0.1.0 - 2017-01-10*/
 (function(window, vjs) {
   'use strict';
 
@@ -93,38 +93,60 @@
       }
     };
 
-    this.onCastMediaLoaded_ = function(media) {
-      this.loadTech_('Chromecast', {
-        type: 'cast',
-        src: this.currentSrc(),
-        apiMedia: media,
-        apiSession: this.castSession_,
-        currentTime: this.currentTime()
-      });
-
-      this.castName_ = this.castSession_.receiver.friendlyName;
-      this.castSession_.addUpdateListener(this.onCastSessionUpdate_.bind(this));
-      this.trigger('chromecast-media-loaded');
-    };
-
     this.onCastSessionUpdate_ = function(isAlive) {
-      if (!isAlive && this.castSession_) {
+      if (!isAlive) {
         return this.onCastStopped_('chromecast-stopped');
       }
     };
 
-    this.onCastStopped_ = function(evt, data) {
-      this.castSession_ = undefined;
+    this.onCastMediaLoaded_ = function(media) {
+      this.options_['chromecast'] = {
+        apiMedia: media,
+        apiSession: this.castSession_,
+        currentTime: this.currentTime()
+      };
 
-      // Steps to recover old tech
-      // 1. Create  plugin to tokenize on src call
-      // 2. Get previous tech on on CastingMediaLoaded
-      // 3. do a loadTech with the currentSrc and set the position (probably offset plugin?)
-      this.trigger(evt, data);
+      this.loadTech_('Chromecast', this.currentSource());
+
+      this.castName_ = this.castSession_.receiver.friendlyName;
+      this.castSession_.addUpdateListener(this.onCastSessionUpdate_.bind(this));
+
+      this.trigger('chromecast-media-loaded');
+    };
+
+    this.onCastStopped_ = function(evt, data) {
+      if (this.castSession_) {
+        var source = this.currentSource(),
+            currentTime = this.currentTime();
+
+        this.castSession_ = undefined;
+        this.unloadTech_();
+        delete this.options_['chromecast'];
+
+        this.trigger('waiting');
+
+        this.src([source]);
+
+        if (this.starttime) {
+          this.starttime(currentTime);
+        }
+
+        this.one('ready', function() {
+          if (!this.starttime) {
+            this.one('timeupdate', function(){
+              this.currentTime(currentTime);
+            });
+          }
+
+          this.play();
+        });
+
+        this.trigger(evt, data);
+      }
     };
 
     this.onLaunchSuccess_ = function(session) {
-      var source = this.currentSrc(),
+      var source = this.currentSource(),
           cast = this.castConnection_.cast,
           media = new cast.media.MediaInfo(source.src, source.type),
           request = new cast.media.LoadRequest(media);
@@ -232,9 +254,9 @@
     constructor: function(options, ready) {
       Tech.prototype.constructor.apply(this, arguments);
 
-      this.apiMedia_ = this.options_.source.apiMedia;
-      this.apiSession_ = this.options_.source.apiSession;
-      this.currentTime_ = this.options_.source.currentTime;
+      this.apiMedia_ = this.options_.apiMedia;
+      this.apiSession_ = this.options_.apiSession;
+      this.currentTime_ = this.options_.currentTime;
 
       this.paused_ = false;
       this.muted_ = false;
@@ -316,7 +338,7 @@
     },
 
     currentSrc: function() {
-      return this.options_.source.src;
+      return this.options_.source;
     },
 
     seekable: function() {
@@ -461,6 +483,10 @@
 
     resetSrc_: function(callback) {
       callback();
+    },
+
+    supportsStarttime: function() {
+      return false;
     },
 
     dispose: function() {
