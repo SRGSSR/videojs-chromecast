@@ -124,7 +124,6 @@
           }
 
           this.play();
-          this.trigger('durationchange');
         });
 
         this.trigger(evt, data);
