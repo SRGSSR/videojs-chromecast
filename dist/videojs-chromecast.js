@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.1.0 - 2017-01-10*/
+/*! videojs-chromecast - v0.1.0 - 2017-01-26*/
 (function(window, vjs) {
   'use strict';
 
@@ -99,21 +99,6 @@
       }
     };
 
-    this.onCastMediaLoaded_ = function(media) {
-      this.options_['chromecast'] = {
-        apiMedia: media,
-        apiSession: this.castSession_,
-        currentTime: this.currentTime()
-      };
-
-      this.loadTech_('Chromecast', this.currentSource());
-
-      this.castName_ = this.castSession_.receiver.friendlyName;
-      this.castSession_.addUpdateListener(this.onCastSessionUpdate_.bind(this));
-
-      this.trigger('chromecast-media-loaded');
-    };
-
     this.onCastStopped_ = function(evt, data) {
       if (this.castSession_) {
         var source = this.currentSource(),
@@ -139,32 +124,41 @@
           }
 
           this.play();
+          this.trigger('durationchange');
         });
 
         this.trigger(evt, data);
       }
     };
 
+    this.onCastMediaLoaded_ = function(media) {
+      this.trigger('chromecast-media-loaded');
+    };
+
+    this.onCastMediaLoadedError_ = function() {
+      this.trigger('chromecast-error', {code: 'MEDIA_ERROR'});
+    };
+
     this.onLaunchSuccess_ = function(session) {
-      var source = this.currentSource(),
-          cast = this.castConnection_.cast,
-          media = new cast.media.MediaInfo(source.src, source.type),
-          request = new cast.media.LoadRequest(media);
+      this.castSession_ = session;
 
-      request.autoplay = true;
-      request.currentTime = this.currentTime();
+      this.options_['chromecast'] = {
+        cast: this.castConnection_.cast,
+        apiSession: this.castSession_,
+        onMediaLoaded: this.onCastMediaLoaded_.bind(this),
+        onMediaLoadedError: this.onCastMediaLoadedError_.bind(this),
+        currentTime: this.currentTime()
+      };
 
-      this.castSession_ = session;        
+      this.loadTech_('Chromecast');
+
+      this.castName_ = this.castSession_.receiver.friendlyName;
+      this.castSession_.addUpdateListener(this.onCastSessionUpdate_.bind(this));
 
       this.pause();
       this.trigger('waiting');
 
-      this.castSession_.loadMedia(request,
-          this.onCastMediaLoaded_.bind(this),
-          function () {
-            this.trigger('chromecast-error', {code: 'MEDIA_ERROR'});
-          }.bind(this)
-      );
+      Player.src.call(this, this.currentSource());
     };
 
     this.launchCasting = function() {
@@ -242,38 +236,30 @@
   });
 
 })(window, window.videojs);
-(function (window, videojs, document) {
+(function (vjs) {
   'use strict';
 
-  var Component = videojs.getComponent('Component'),
-      Tech = videojs.getTech('Tech'),
+  var Component = vjs.getComponent('Component'),
+      Tech = vjs.getTech('Tech'),
       chrome = window.chrome;
 
-  var Chromecast = videojs.extend(Tech, {
+  var Chromecast = vjs.extend(Tech, {
 
     constructor: function(options, ready) {
       Tech.prototype.constructor.apply(this, arguments);
 
-      this.apiMedia_ = this.options_.apiMedia;
+      this.cast_ = this.options_.cast;
       this.apiSession_ = this.options_.apiSession;
       this.currentTime_ = this.options_.currentTime;
 
       this.paused_ = false;
       this.muted_ = false;
 
-      this.apiMedia_.addUpdateListener(this.onMediaStateUpdate_.bind(this));
       this.apiSession_.addUpdateListener(this.onSessionUpdate_.bind(this));
 
       this.startProgressTimer_();
 
       this.triggerReady();
-
-      this.trigger('loadstart');
-      this.trigger('loadedmetadata');
-      this.trigger('loadeddata');
-      this.trigger('canplay');
-      this.trigger('canplaythrough');
-      this.trigger('durationchange');
     },
 
     onSessionUpdate_: function(isAlive) {
@@ -285,7 +271,9 @@
     stopCasting_: function() {
       this.stopTrackingCurrentTime();
       clearInterval(this.progressTimer_);
-      this.apiMedia_.stop();
+      if (this.apiMedia_) {
+        this.apiMedia_.stop();
+      }
       this.apiSession_.stop();
     },
 
@@ -296,17 +284,17 @@
 
       this.currentTime_ = this.apiMedia_.currentTime;
       switch (this.apiMedia_.playerState) {
-        case chrome.cast.media.PlayerState.BUFFERING:
+        case this.cast_.media.PlayerState.BUFFERING:
           this.trigger('waiting');
           break;
-        case chrome.cast.media.PlayerState.IDLE:
+        case this.cast_.media.PlayerState.IDLE:
           this.onIdle_();
           break;
-        case chrome.cast.media.PlayerState.PAUSED:
+        case this.cast_.media.PlayerState.PAUSED:
           this.trigger('pause');
           this.paused_ = true;
           break;
-        case chrome.cast.media.PlayerState.PLAYING:
+        case this.cast_.media.PlayerState.PLAYING:
           this.trigger('playing');
           this.trigger('play');
           this.paused_ = false;
@@ -320,12 +308,12 @@
       }
 
       switch (this.apiMedia_.idleReason) {
-        case chrome.cast.media.IdleReason.CANCELLED:
-        case chrome.cast.media.IdleReason.INTERRUPTED:
-        case chrome.cast.media.IdleReason.ERROR:
+        case this.cast_.media.IdleReason.CANCELLED:
+        case this.cast_.media.IdleReason.INTERRUPTED:
+        case this.cast_.media.IdleReason.ERROR:
           this.trigger('error');
           break;
-        case chrome.cast.media.IdleReason.FINISHED:
+        case this.cast_.media.IdleReason.FINISHED:
           this.ended_ = true;
           this.trigger('ended');
       }
@@ -333,8 +321,41 @@
       this.stopCasting_();
     },
 
-    src: function(src) {
-      // Not Supported
+    onMediaLoaded_: function(media) {
+      this.apiMedia_ = media;
+
+      this.trigger('durationchange');
+      this.trigger('loadstart');
+      this.trigger('loadedmetadata');
+      this.trigger('loadeddata');
+      this.trigger('canplay');
+      this.trigger('canplaythrough');
+
+      this.apiMedia_.addUpdateListener(this.onMediaStateUpdate_.bind(this));
+      this.options_.onMediaLoaded();
+    },
+
+    load: function() {
+      // Do nothing
+    },
+
+    src: function(source) {
+      if (source!==undefined) {
+        var media = new this.cast_.media.MediaInfo(source),
+            request = new this.cast_.media.LoadRequest(media);
+
+        request.autoplay = true;
+        request.currentTime = this.currentTime();
+
+        this.trigger('waiting');
+
+        this.apiSession_.loadMedia(request,
+            this.onMediaLoaded_.bind(this),
+            this.options_.onMediaLoadedError
+        );
+      } else {
+        return this.currentSrc();
+      }
     },
 
     currentSrc: function() {
@@ -387,7 +408,7 @@
 
     setCurrentTime: function(position) {
       if (this.apiMedia_) {
-        var request = new chrome.cast.media.SeekRequest();
+        var request = new this.cast_.media.SeekRequest();
 
         request.currentTime = position;
         this.currentTime_ = position;
@@ -408,7 +429,7 @@
         return;
       }
 
-      if (this.apiMedia_.playerState === chrome.cast.media.PlayerState.PLAYING) {
+      if (this.apiMedia_.playerState === this.cast_.media.PlayerState.PLAYING) {
         if (this.currentTime() < this.apiMedia_.media.duration) {
           this.currentTime_ += 1;
           this.trigger('timeupdate');
@@ -444,8 +465,8 @@
 
     setVolume: function(level) {
       if (this.apiMedia_) {
-        var volume = new chrome.cast.Volume(),
-            request = new chrome.cast.media.VolumeRequest(),
+        var volume = new this.cast_.Volume(),
+            request = new this.cast_.media.VolumeRequest(),
             success = this.mediaCastSuccess_.bind(this, 'Volume changed'),
             error = this.mediaCastError_.bind(this);
 
@@ -464,8 +485,8 @@
 
     setMuted: function(muted) {
       if (this.apiMedia_) {
-        var volume = new chrome.cast.Volume(),
-            request = new chrome.cast.media.VolumeRequest(),
+        var volume = new this.cast_.Volume(),
+            request = new this.cast_.media.VolumeRequest(),
             success = this.mediaCastSuccess_.bind(this, 'Mute changed'),
             error = this.mediaCastError_.bind(this);
 
@@ -533,4 +554,4 @@
   Component.registerComponent('Chromecast', Chromecast);
   Tech.registerTech('Chromecast', Chromecast);
 
-})(window, window.videojs, document);
+})(window.videojs, document);
