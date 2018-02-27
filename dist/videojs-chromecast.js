@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.0 - 2017-01-26*/
+/*! videojs-chromecast - v0.2.1 - 2018-02-27*/
 (function(window, vjs) {
   'use strict';
 
@@ -9,9 +9,11 @@
 
   CastConnection.prototype = {
     connect_: function() {
+      if (this.appID !== undefined) {
+        this.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID = this.appID;
+      }
       var request = new this.cast.SessionRequest(this.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID),
           config = new this.cast.ApiConfig(request, this.onSessionJoined_, this.receiverListener_.bind(this));
-
       this.cast.initialize(config, this.onInitSuccess_, this.onInitError_);
     },
 
@@ -72,14 +74,17 @@
         };
 
     this.initCastConnection_ = function() {
+      
       if (!this.castConnection_ && this.canCastCurrentSrc_()) {
         this.castConnection_ = new CastConnection(this.onCastSessionJoined_);
+        this.castConnection_.appID = options.appID;
         this.castConnection_.initialize_(this.onCastInitSucccess_, this.onCastInitError);
       }
     };
 
     this.onCastInitSucccess_ = function() {
       this.trigger('chromecast-initialized');
+      
     };
 
     this.onCastInitError_ = function() {
@@ -89,6 +94,7 @@
     this.onCastSessionJoined_ = function(session) {
       if (session.media.length) {
         this.castSession_ = session;
+
         this.onCastMediaLoaded_(this.castSession_.media[0]);
       }
     };
@@ -140,13 +146,13 @@
 
     this.onLaunchSuccess_ = function(session) {
       this.castSession_ = session;
-
       this.options_['chromecast'] = {
         cast: this.castConnection_.cast,
         apiSession: this.castSession_,
         onMediaLoaded: this.onCastMediaLoaded_.bind(this),
         onMediaLoadedError: this.onCastMediaLoadedError_.bind(this),
-        currentTime: this.currentTime()
+        currentTime: this.currentTime(),
+        urn: options.urn
       };
 
       this.loadTech_('Chromecast');
@@ -163,7 +169,7 @@
     this.launchCasting = function() {
       if (this.castConnection_ && this.castConnection_.isConnected) {
         var cast = this.castConnection_.cast;
-
+        cast.urn = this.castConnection_.URN;
         this.pause();
         this.trigger('waiting');
 
@@ -250,6 +256,7 @@
       this.cast_ = this.options_.cast;
       this.apiSession_ = this.options_.apiSession;
       this.currentTime_ = this.options_.currentTime;
+      this.urn_ = this.options_.urn;
 
       this.paused_ = false;
       this.muted_ = false;
@@ -345,6 +352,7 @@
 
         request.autoplay = true;
         request.currentTime = this.currentTime();
+        request.customData = this.urn_;
 
         this.trigger('waiting');
 
