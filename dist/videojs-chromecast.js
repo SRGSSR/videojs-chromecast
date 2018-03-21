@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.1 - 2018-02-27*/
+/*! videojs-chromecast - v0.2.2 - 2018-03-21*/
 (function(window, vjs) {
   'use strict';
 
@@ -352,7 +352,7 @@
 
         request.autoplay = true;
         request.currentTime = this.currentTime();
-        request.customData = this.urn_;
+        request.customData = {urn: this.urn_};
 
         this.trigger('waiting');
 
