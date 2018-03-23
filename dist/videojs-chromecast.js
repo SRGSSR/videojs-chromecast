@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.2 - 2018-03-21*/
+/*! videojs-chromecast - v0.2.3 - 2018-03-21*/
 (function(window, vjs) {
   'use strict';
 
@@ -287,6 +287,9 @@
       if (!this.apiMedia_) {
         return;
       }
+      var toto = {
+        this.cast_.media.PlayerState.BUFFERING : function () { this.trigger('waiting')}, 
+      }
 
       this.currentTime_ = this.apiMedia_.currentTime;
       switch (this.apiMedia_.playerState) {
@@ -350,9 +353,9 @@
         var media = new this.cast_.media.MediaInfo(source),
             request = new this.cast_.media.LoadRequest(media);
 
-        request.autoplay = true;
+        request.autoplay = false;
         request.currentTime = this.currentTime();
-        request.customData = {urn: this.urn_};
+        request.customData = {urn: this.urn_._str};
 
         this.trigger('waiting');
 
