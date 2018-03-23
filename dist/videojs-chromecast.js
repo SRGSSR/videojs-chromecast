@@ -287,9 +287,6 @@
       if (!this.apiMedia_) {
         return;
       }
-      var toto = {
-        this.cast_.media.PlayerState.BUFFERING : function () { this.trigger('waiting')}, 
-      }
 
       this.currentTime_ = this.apiMedia_.currentTime;
       switch (this.apiMedia_.playerState) {
