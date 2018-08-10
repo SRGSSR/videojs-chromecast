@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.0 - 2017-01-26*/
+/*! videojs-chromecast - v0.2.0 - 2018-08-10*/
 (function(window, vjs) {
   'use strict';
 
@@ -63,8 +63,8 @@
     }
   });
 
-  vjs.plugin('chromecast', function(options) {
-    var Chromecast = vjs.getComponent('Chromecast'),
+  vjs.registerPlugin('chromecast', function(options) {
+    var Chromecast = vjs.getTech('Chromecast'),
         constructor = this,
         Player = {
           dispose: constructor.dispose,
