@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.0 - 2018-08-10*/
+/*! videojs-chromecast - v0.2.3 - 2018-08-13*/
 (function(window, vjs) {
   'use strict';
 
@@ -9,6 +9,9 @@
 
   CastConnection.prototype = {
     connect_: function() {
+      if (this.appID !== undefined) {
+        this.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID = this.appID;
+      }
       var request = new this.cast.SessionRequest(this.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID),
           config = new this.cast.ApiConfig(request, this.onSessionJoined_, this.receiverListener_.bind(this));
 
@@ -74,6 +77,7 @@
     this.initCastConnection_ = function() {
       if (!this.castConnection_ && this.canCastCurrentSrc_()) {
         this.castConnection_ = new CastConnection(this.onCastSessionJoined_);
+        this.castConnection_.appID = options.appID;
         this.castConnection_.initialize_(this.onCastInitSucccess_, this.onCastInitError);
       }
     };
@@ -146,7 +150,8 @@
         apiSession: this.castSession_,
         onMediaLoaded: this.onCastMediaLoaded_.bind(this),
         onMediaLoadedError: this.onCastMediaLoadedError_.bind(this),
-        currentTime: this.currentTime()
+        currentTime: this.currentTime(),
+        urn: options.urn
       };
 
       this.loadTech_('Chromecast');
@@ -163,7 +168,7 @@
     this.launchCasting = function() {
       if (this.castConnection_ && this.castConnection_.isConnected) {
         var cast = this.castConnection_.cast;
-
+        cast.urn = this.castConnection_.URN;
         this.pause();
         this.trigger('waiting');
 
@@ -250,6 +255,7 @@
       this.cast_ = this.options_.cast;
       this.apiSession_ = this.options_.apiSession;
       this.currentTime_ = this.options_.currentTime;
+      this.urn_ = this.options_.urn;
 
       this.paused_ = false;
       this.muted_ = false;
@@ -343,8 +349,9 @@
         var media = new this.cast_.media.MediaInfo(source),
             request = new this.cast_.media.LoadRequest(media);
 
-        request.autoplay = true;
+        request.autoplay = false;
         request.currentTime = this.currentTime();
+        request.customData = {urn: this.urn_._str};
 
         this.trigger('waiting');
 
