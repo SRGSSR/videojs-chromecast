@@ -1,556 +1,290 @@
-/*! videojs-chromecast - v0.2.0 - 2017-01-26*/
+/*! videojs-chromecast - v0.2.0 - 2018-11-12*/
 (function(window, vjs) {
-  'use strict';
+    'use strict';
 
-  function CastConnection(onSessionJoined) {
-    this.isConnected_ = false;
-    this.onSessionJoined_ = onSessionJoined;
-  }
+    vjs.registerPlugin('chromecast', function(options) {
+        var Chromecast = vjs.getTech('Chromecast'),
+            constructor = this,
+            context,
+            castSession,
+            remotePlayer,
+            localPlayer,
+            playerController,
+            chromecastOptions = options;
 
-  CastConnection.prototype = {
-    connect_: function() {
-      var request = new this.cast.SessionRequest(this.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID),
-          config = new this.cast.ApiConfig(request, this.onSessionJoined_, this.receiverListener_.bind(this));
+        this.initCastConnection_ = function() {
+            if (window.cast == null) {
+                return;
+            }
+            localPlayer = this;
+            context = window.cast.framework.CastContext.getInstance();
+            context.addEventListener(
+                window.cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+                function(event) {
+                    switch (event.sessionState) {
+                        case window.cast.framework.SessionState.SESSION_STARTED:
+                            this.onLaunchSuccess_();
+                            break;
+                        case window.cast.framework.SessionState.SESSION_RESUMED:
+                            break;
+                        case window.cast.framework.SessionState.SESSION_ENDED:
+                            this.onCastStopped_();
 
-      this.cast.initialize(config, this.onInitSuccess_, this.onInitError_);
-    },
+                            break;
+                    }
+                }.bind(this));
 
-    initialize_: function() {
-      if (this.isAvailable) {
-        this.connect_();
-        this.intializeTimeout_ = undefined;
-      } else {
-        this.intializeTimeout_ = setTimeout(this.initialize_.bind(this), 2000);
-      }
-    },
-
-    receiverListener_: function(availability) {
-      if (availability === 'available') {
-        this.isConnected_ = true;
-      }
-    },
-
-    initialize: function(success, error) {
-      if (!this.isConnected_ && window.chrome) {
-        this.onInitSuccess_ = success;
-        this.onInitError_ = error;
-        this.initialize_();
-      }
-    },
-
-    dispose: function() {
-      if (this.intializeTimeout_) {
-        clearTimeout(this.intializeTimeout_);
-      }
-    }
-  };
-
-  Object.defineProperties(CastConnection.prototype, {
-    cast: {
-      get: function() {
-        return (window.chrome) ? window.chrome.cast : undefined;
-      }
-    },
-    isConnected: {
-      get: function() {
-        return this.isConnected_;
-      }
-    },
-    isAvailable: {
-      get: function() {
-        return this.cast && this.cast.isAvailable;
-      }
-    }
-  });
-
-  vjs.plugin('chromecast', function(options) {
-    var Chromecast = vjs.getComponent('Chromecast'),
-        constructor = this,
-        Player = {
-          dispose: constructor.dispose,
-          src: constructor.src
+            context.setOptions({
+                receiverApplicationId: chromecastOptions.appID ? chromecastOptions.appID : window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID
+            });
+            localPlayer.trigger('chromecast-initialized');
         };
 
-    this.initCastConnection_ = function() {
-      if (!this.castConnection_ && this.canCastCurrentSrc_()) {
-        this.castConnection_ = new CastConnection(this.onCastSessionJoined_);
-        this.castConnection_.initialize_(this.onCastInitSucccess_, this.onCastInitError);
-      }
-    };
+        this.onCastStopped_ = function(evt, data) {
+            if (castSession) {
+                var src = localPlayer.currentSrc();
+                var  currentTime = remotePlayer.currentTime;
+                localPlayer.trigger('chromecast-stopped');
+                localPlayer.loadTech_('html5');
+                localPlayer.src({ src: src });
+                localPlayer.currentTime(currentTime);
+                localPlayer.play();
+                castSession.endSession(true);
+                castSession = undefined;
+            }
+        };
 
-    this.onCastInitSucccess_ = function() {
-      this.trigger('chromecast-initialized');
-    };
+        this.onLaunchSuccess_ = function(session) {
+            castSession = window.cast.framework.CastContext.getInstance().getCurrentSession();
 
-    this.onCastInitError_ = function() {
-      this.trigger('chromecast-error', {code: 'LAUNCH_ERROR'});
-    };
+            var mediaInfo = new window.chrome.cast.media.MediaInfo(chromecastOptions.urn);
+            mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
+            mediaInfo.metadata.title = chromecastOptions.title;
+            mediaInfo.metadata.subtitle = chromecastOptions.subtitle;
 
-    this.onCastSessionJoined_ = function(session) {
-      if (session.media.length) {
-        this.castSession_ = session;
-        this.onCastMediaLoaded_(this.castSession_.media[0]);
-      }
-    };
+            var request = new window.chrome.cast.media.LoadRequest(mediaInfo);
+            request.currentTime = localPlayer.currentTime();
+            request.customData = {server: chromecastOptions.server};
 
-    this.onCastSessionUpdate_ = function(isAlive) {
-      if (!isAlive) {
-        return this.onCastStopped_('chromecast-stopped');
-      }
-    };
+            this.castName_ = castSession.getCastDevice().friendlyName;
+            localPlayer.trigger('loading');
 
-    this.onCastStopped_ = function(evt, data) {
-      if (this.castSession_) {
-        var source = this.currentSource(),
-            currentTime = this.currentTime();
+            castSession.loadMedia(request).then(
+                function() {
+                    remotePlayer = new window.cast.framework.RemotePlayer();
+                    playerController = new window.cast.framework.RemotePlayerController(remotePlayer);
 
-        this.castSession_ = undefined;
-        this.unloadTech_();
-        delete this.options_['chromecast'];
+                    this.options_['chromecast'] = {
+                        cast: window.chrome.cast,
+                        apiSession: castSession,
+                        localPlayer:localPlayer,
+                        remotePlayer:remotePlayer,
+                        remotePlayerController:playerController
+                    };
+                    localPlayer.trigger('chromecast-media-loaded');
+                    localPlayer.loadTech_('Chromecast');
+                }.bind(this),
+                function(errorCode) {
+                    window.console.log('Error code: ' + errorCode);
+                });
 
-        this.trigger('waiting');
+        };
 
-        this.src([source]);
+        this.launchCasting = function() {
 
-        if (this.starttime) {
-          this.starttime(currentTime);
-        }
+        };
+
+        this.getCastDeviceName = function() {
+            return this.castName_;
+        };
+
+        this.isCasting = function() {
+            return !!(castSession);
+        };
+
+        this.canCastCurrentSrc_ = function() {
+            var canPlaySource = Chromecast.canPlaySource(this.currentSource());
+            return (canPlaySource === 'maybe' || canPlaySource === 'probably');
+        };
+
+        this.isCastReady = function() {
+            return !!(context);
+        };
 
         this.one('ready', function() {
-          if (!this.starttime) {
-            this.one('timeupdate', function(){
-              this.currentTime(currentTime);
-            });
-          }
-
-          this.play();
+            this.initCastConnection_();
         });
-
-        this.trigger(evt, data);
-      }
-    };
-
-    this.onCastMediaLoaded_ = function(media) {
-      this.trigger('chromecast-media-loaded');
-    };
-
-    this.onCastMediaLoadedError_ = function() {
-      this.trigger('chromecast-error', {code: 'MEDIA_ERROR'});
-    };
-
-    this.onLaunchSuccess_ = function(session) {
-      this.castSession_ = session;
-
-      this.options_['chromecast'] = {
-        cast: this.castConnection_.cast,
-        apiSession: this.castSession_,
-        onMediaLoaded: this.onCastMediaLoaded_.bind(this),
-        onMediaLoadedError: this.onCastMediaLoadedError_.bind(this),
-        currentTime: this.currentTime()
-      };
-
-      this.loadTech_('Chromecast');
-
-      this.castName_ = this.castSession_.receiver.friendlyName;
-      this.castSession_.addUpdateListener(this.onCastSessionUpdate_.bind(this));
-
-      this.pause();
-      this.trigger('waiting');
-
-      Player.src.call(this, this.currentSource());
-    };
-
-    this.launchCasting = function() {
-      if (this.castConnection_ && this.castConnection_.isConnected) {
-        var cast = this.castConnection_.cast;
-
-        this.pause();
-        this.trigger('waiting');
-
-        cast.requestSession(
-          this.onLaunchSuccess_.bind(this),
-          function() {
-            this.pause();
-            this.trigger('chromecast-error', {code: 'MEDIA_ERROR'});
-          }.bind(this)
-        );
-      }
-    };
-
-    this.stopCasting = function() {
-      if (this.castSession_) {
-        this.castSession_.stop(
-          this.onCastStopped_.bind(this, 'chromecast-stopped'),
-          this.onCastStopped_.bind(this, 'chromecast-error', {code: 'STOP_ERROR'})
-        );
-      }
-    };
-
-    this.getCastDeviceName = function() {
-      return this.castName_;
-    };
-
-    this.isCasting = function() {
-      return !!this.castSession_;
-    };
-
-    this.canCastCurrentSrc_ = function() {
-      var canPlaySource = Chromecast.canPlaySource(this.currentSource());
-      return (canPlaySource === 'maybe' || canPlaySource === 'probably');
-    };
-
-    this.isCastReady = function() {
-       return this.canCastCurrentSrc_() &&
-              this.castConnection_ &&
-              this.castConnection_.isConnected;
-    };
-
-    this.disposeCast_ = function() {
-      this.stopCasting();
-      if (this.castConnection_) {
-        this.castConnection_.dispose();
-        this.castConnection_ = undefined;
-      }
-    };
-
-    this.dispose = function() {
-      this.disposeCast_();
-      Player.dispose.call(this);
-    };
-
-    this.src = function(source) {
-      if (source) {
-        this.stopCasting();
-      }
-      return Player.src.call(this, source);
-    };
-
-    if (!this.isReady_) {
-      this.on('ready', function() {
-        this.initCastConnection_();
-      });
-    } else {
-      this.initCastConnection_();
-    }
-  });
+    });
 
 })(window, window.videojs);
+
 (function (vjs) {
-  'use strict';
+    'use strict';
 
-  var Component = vjs.getComponent('Component'),
-      Tech = vjs.getTech('Tech'),
-      chrome = window.chrome;
+    var Component = vjs.getComponent('Component'),
+        Tech = vjs.getTech('Tech'),
+        chrome = window.chrome;
 
-  var Chromecast = vjs.extend(Tech, {
+    var Chromecast = vjs.extend(Tech, {
 
-    constructor: function(options, ready) {
-      Tech.prototype.constructor.apply(this, arguments);
+        constructor: function(options, ready) {
+            Tech.prototype.constructor.apply(this, arguments);
 
-      this.cast_ = this.options_.cast;
-      this.apiSession_ = this.options_.apiSession;
-      this.currentTime_ = this.options_.currentTime;
+            this.apiSession_ = this.options_.apiSession;
+            this.localPlayer_ = this.options_.localPlayer;
+            this.remotePlayer_ = this.options_.remotePlayer;
+            this.remotePlayerController_ = this.options_.remotePlayerController;
 
-      this.paused_ = false;
-      this.muted_ = false;
+            this.currentTime_ = this.localPlayer_.currentTime();
+            this.urn_ = this.options_.urn;
 
-      this.apiSession_.addUpdateListener(this.onSessionUpdate_.bind(this));
+            this.remotePlayer_.paused_ = false;
+            this.remotePlayer_.muted_ = false;
 
-      this.startProgressTimer_();
+            this.startProgressTimer_();
+            this.triggerReady();
 
-      this.triggerReady();
-    },
+            if (this.remotePlayer_.isMuted) {
+                this.remotePlayerController_.muteOrUnmute();
+            }
 
-    onSessionUpdate_: function(isAlive) {
-      if (this.apiMedia_ && !isAlive) {
-        this.stopCasting_();
-      }
-    },
+            this.localPlayer_.trigger("play");
+        },
 
-    stopCasting_: function() {
-      this.stopTrackingCurrentTime();
-      clearInterval(this.progressTimer_);
-      if (this.apiMedia_) {
-        this.apiMedia_.stop();
-      }
-      this.apiSession_.stop();
-    },
 
-    onMediaStateUpdate_: function() {
-      if (!this.apiMedia_) {
-        return;
-      }
+        seekable: function() {
+            return undefined;
+        },
 
-      this.currentTime_ = this.apiMedia_.currentTime;
-      switch (this.apiMedia_.playerState) {
-        case this.cast_.media.PlayerState.BUFFERING:
-          this.trigger('waiting');
-          break;
-        case this.cast_.media.PlayerState.IDLE:
-          this.onIdle_();
-          break;
-        case this.cast_.media.PlayerState.PAUSED:
-          this.trigger('pause');
-          this.paused_ = true;
-          break;
-        case this.cast_.media.PlayerState.PLAYING:
-          this.trigger('playing');
-          this.trigger('play');
-          this.paused_ = false;
-          break;
-      }
-    },
+        _playOrPause: function(){
+            if (this.remotePlayer_.isPaused) {
+                this.localPlayer_.trigger("pause");
+            }else{
+                this.localPlayer_.trigger("play");
+            }
+            this.remotePlayerController_.playOrPause();
+        },
 
-    onIdle_: function() {
-      if (!this.apiMedia_) {
-        return;
-      }
+        play: function() {
+            this._playOrPause();
+        },
 
-      switch (this.apiMedia_.idleReason) {
-        case this.cast_.media.IdleReason.CANCELLED:
-        case this.cast_.media.IdleReason.INTERRUPTED:
-        case this.cast_.media.IdleReason.ERROR:
-          this.trigger('error');
-          break;
-        case this.cast_.media.IdleReason.FINISHED:
-          this.ended_ = true;
-          this.trigger('ended');
-      }
+        pause: function() {
+            this._playOrPause();
+        },
 
-      this.stopCasting_();
-    },
+        paused: function() {
+            return this.remotePlayer_.isPaused;
+        },
 
-    onMediaLoaded_: function(media) {
-      this.apiMedia_ = media;
+        seek: function(position){
+            this.setCurrentTime(position);
+        },
 
-      this.trigger('durationchange');
-      this.trigger('loadstart');
-      this.trigger('loadedmetadata');
-      this.trigger('loadeddata');
-      this.trigger('canplay');
-      this.trigger('canplaythrough');
+        currentTime: function(position) {
+            return this.remotePlayer_.currentTime;
+        },
 
-      this.apiMedia_.addUpdateListener(this.onMediaStateUpdate_.bind(this));
-      this.options_.onMediaLoaded();
-    },
+        setCurrentTime: function(position) {
+            var duration = this._remotePlayer.duration;
+            this._remotePlayer.currentTime = Math.min(duration - 1, position);
+            this.remotePlayerController_.seek();
+        },
 
-    load: function() {
-      // Do nothing
-    },
+        startProgressTimer_: function() {
+            if (this.progressTimer_) {
+                clearInterval(this.progressTimer_);
+            }
+            this.progressTimer_ = setInterval(this.incrementCurrentTime_.bind(this), 1000);
+        },
 
-    src: function(source) {
-      if (source!==undefined) {
-        var media = new this.cast_.media.MediaInfo(source),
-            request = new this.cast_.media.LoadRequest(media);
+        incrementCurrentTime_: function() {
+            if (!this.remotePlayer_) {
+                return;
+            }
+            if (this.remotePlayer_.playerState === "PLAYING") {
+                if (this.remotePlayer_.currentTime < this.remotePlayer_.duration) {
+                    this.currentTime_ = this.remotePlayer_.currentTime;
+                    this.trigger('timeupdate');
+                } else {
+                    clearInterval(this.progressTime_);
+                }
+            }
+        },
 
-        request.autoplay = true;
-        request.currentTime = this.currentTime();
+        onSeekSuccess: function(position) { },
 
-        this.trigger('waiting');
+        ended: function() {
+            return this.remotePlayer_.duration <= this.remotePlayer_.currentTime;
+        },
 
-        this.apiSession_.loadMedia(request,
-            this.onMediaLoaded_.bind(this),
-            this.options_.onMediaLoadedError
-        );
-      } else {
-        return this.currentSrc();
-      }
-    },
+        duration: function() {
+            return this.remotePlayer_.duration;
+        },
 
-    currentSrc: function() {
-      return this.options_.source;
-    },
+        controls: function() {
+            return false;
+        },
 
-    seekable: function() {
-      return undefined;
-    },
+        volume: function() {},
 
-    mediaCastError_: function(e) {
+        setVolume: function(level) {},
 
-    },
+        muted: function() {
+            return this.muted_;
+        },
 
-    mediaCastSuccess_: function() {
+        setMuted: function(muted) {},
 
-    },
+        supportsFullScreen: function() {},
 
-    apiCall_: function(func, request) {
-      this.apiMedia_[func](request || null, this.mediaCastSuccess_.bind(this), this.mediaCastError_.bind(this));
-    },
+        resetSrc_: function(callback) {
+            callback();
+        },
 
-    play: function() {
-      if (!this.apiMedia_) {
-        return;
-      }
-      if (this.paused_) {
-        this.apiCall_('play');
-      }
-      this.paused_ = false;
-    },
+        supportsStarttime: function() {
+            return false;
+        },
 
-    pause: function() {
-      if (!this.apiMedia_) {
-        return;
-      }
-      if (!this.paused_) {
-        this.apiCall_('pause');
-        this.paused_ = true;
-      }
-    },
+        dispose: function() { }
+    });
 
-    paused: function() {
-      return this.paused_;
-    },
+    Chromecast.prototype.options_ = {};
+    Chromecast.isSupported = function () {
+        return true;
+    };
 
-    currentTime: function() {
-      return (!this.ended_) ? this.currentTime_ : this.duration();
-    },
+    Chromecast.prototype.featuresVolumeControl = true;
+    Chromecast.prototype.featuresPlaybackRate = false;
+    Chromecast.prototype.movingMediaElementInDOM = false;
+    Chromecast.prototype.featuresFullscreenResize = false;
+    Chromecast.prototype.featuresTimeupdateEvents = false;
+    Chromecast.prototype.featuresProgressEvents = false;
+    Chromecast.prototype.featuresNativeTextTracks = true;
+    Chromecast.prototype.featuresNativeAudioTracks = true;
+    Chromecast.prototype.featuresNativeVideoTracks = false;
 
-    setCurrentTime: function(position) {
-      if (this.apiMedia_) {
-        var request = new this.cast_.media.SeekRequest();
+    Chromecast.supportsCasting_ = function(source) {
+        var typeRE = /^application\/(?:dash\+xml|(x-|vnd\.apple\.)mpegurl)/i;
+        var extensionRE = /^video\/(mpd|mp4|webm|m3u8)/i;
 
-        request.currentTime = position;
-        this.currentTime_ = position;
-
-        this.apiCall_('seek', request); 
-      }
-    },
-
-    startProgressTimer_: function() {
-      if (this.progressTimer_) {
-        clearInterval(this.progressTimer_);
-      }
-      this.progressTimer_ = setInterval(this.incrementCurrentTime_.bind(this), 1000);
-    },
-
-    incrementCurrentTime_: function() {
-      if (!this.apiMedia_) {
-        return;
-      }
-
-      if (this.apiMedia_.playerState === this.cast_.media.PlayerState.PLAYING) {
-        if (this.currentTime() < this.apiMedia_.media.duration) {
-          this.currentTime_ += 1;
-          this.trigger('timeupdate');
+        if (typeRE.test(source)) {
+            return 'probably';
+        } else if (extensionRE.test(source)) {
+            return 'maybe';
         } else {
-          clearInterval(this.progressTime_);
+            return '';
         }
-      }
-    },
+    };
 
-    onSeekSuccess: function(position) {
+    Chromecast.canPlaySource = function(source) {
+        return chrome && (source.type) ? this.supportsCasting_(source.type) : this.supportsCasting_(source.src);
+    };
 
-    },
-
-    ended: function() {
-      return this.ended_ || this.duration() <= this.currentTime_;
-    },
-
-    duration: function() {
-      if (!this.apiMedia_) {
-        return 0;
-      }
-
-      return this.apiMedia_.media.duration;
-    },
-
-    controls: function() {
-      return false;
-    },
-
-    volume: function() {
-      return this.volume_;
-    },
-
-    setVolume: function(level) {
-      if (this.apiMedia_) {
-        var volume = new this.cast_.Volume(),
-            request = new this.cast_.media.VolumeRequest(),
-            success = this.mediaCastSuccess_.bind(this, 'Volume changed'),
-            error = this.mediaCastError_.bind(this);
-
-        volume.level = level;
-        this.volume_ = level;
-        request.volume = volume;
-        this.apiCall_('setVolume', request);
-
-        this.trigger('volumechange');
-      }
-    },
-
-    muted: function() {
-      return this.muted_;
-    },
-
-    setMuted: function(muted) {
-      if (this.apiMedia_) {
-        var volume = new this.cast_.Volume(),
-            request = new this.cast_.media.VolumeRequest(),
-            success = this.mediaCastSuccess_.bind(this, 'Mute changed'),
-            error = this.mediaCastError_.bind(this);
-
-        this.muted_ = muted === undefined ? false : !!muted;
-        volume.level = this.muted_;
-        this.apiCall_('setVolume', request);
-
-        this.trigger('volumechange');
-      }
-    },
-
-    supportsFullScreen: function() {
-      return false;
-    },
-
-    resetSrc_: function(callback) {
-      callback();
-    },
-
-    supportsStarttime: function() {
-      return false;
-    },
-
-    dispose: function() {
-      this.stopCasting_();
-      this.apiMedia_ = undefined;
-      this.apiSession_ = undefined;
-      this.resetSrc_(Function.prototype);
-      Tech.prototype.dispose.apply(this, arguments);
-    }
-  });
-
-  Chromecast.prototype.options_ = {};
-  Chromecast.isSupported = function () {
-    return true;
-  };
-
-  Chromecast.prototype.featuresVolumeControl = true;
-  Chromecast.prototype.featuresPlaybackRate = false;
-  Chromecast.prototype.movingMediaElementInDOM = false;
-  Chromecast.prototype.featuresFullscreenResize = false;
-  Chromecast.prototype.featuresTimeupdateEvents = false;
-  Chromecast.prototype.featuresProgressEvents = false;
-  Chromecast.prototype.featuresNativeTextTracks = true;
-  Chromecast.prototype.featuresNativeAudioTracks = true;
-  Chromecast.prototype.featuresNativeVideoTracks = false;
-
-  Chromecast.supportsCasting_ = function(source) {
-    var typeRE = /^application\/(?:dash\+xml|(x-|vnd\.apple\.)mpegurl)/i;
-    var extensionRE = /^video\/(mpd|mp4|webm|m3u8)/i;
-
-    if (typeRE.test(source)) {
-      return 'probably';
-    } else if (extensionRE.test(source)) {
-      return 'maybe';
+    if (typeof Tech.registerTech !== 'undefined') {
+        Tech.registerTech('Chromecast', Chromecast);
     } else {
-      return '';
+        Component.registerComponent('Chromecast', Chromecast);
     }
-  };
-
-  Chromecast.canPlaySource = function(source) {
-    return chrome && (source.type) ? this.supportsCasting_(source.type) : this.supportsCasting_(source.src);
-  };
-
-  Component.registerComponent('Chromecast', Chromecast);
-  Tech.registerTech('Chromecast', Chromecast);
 
 })(window.videojs, document);

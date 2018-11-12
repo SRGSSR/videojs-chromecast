@@ -6,7 +6,11 @@
         "type": "git",
         "url": "https://github.com/SRGSSR/videojs-chromecast.git"
     },
-    "keywords": ["videojs", "videojs-plugin", "chromecast"],
+    "keywords": [
+        "videojs",
+        "videojs-plugin",
+        "chromecast"
+    ],
     "author": "SRGSSR",
     "license": "MIT",
     "dependencies": {
