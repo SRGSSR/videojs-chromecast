@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.0 - 2018-11-13*/
+/*! videojs-chromecast - v0.2.1 - 2018-11-13*/
 (function(window, vjs) {
     'use strict';
 
@@ -10,6 +10,7 @@
             remotePlayer,
             localPlayer,
             playerController,
+            metadata,
             chromecastOptions = options;
 
         this.canCastCurrentSrc_ = function() {
@@ -62,7 +63,11 @@
         };
 
         this.onCastStopped_ = function(evt, data) {
-            if (castSession) {
+            if (castSession){
+                castSession.endSession(true);
+                castSession = undefined;
+            }
+            if (!metadata.isLive) {
                 var src = localPlayer.currentSrc();
                 var  currentTime = remotePlayer.currentTime;
                 localPlayer.trigger('chromecast-stopped');
@@ -70,8 +75,10 @@
                 localPlayer.src({ src: src });
                 localPlayer.currentTime(currentTime);
                 localPlayer.play();
-                castSession.endSession(true);
-                castSession = undefined;
+            }else{
+                localPlayer.trigger('chromecast-stopped');
+                this.reset();
+                this.trigger('chromecast-force-to-live');
             }
         };
 
@@ -88,6 +95,7 @@
             request.customData = {server: chromecastOptions.server};
 
             this.castName_ = castSession.getCastDevice().friendlyName;
+            metadata = chromecastOptions.metadata;
             localPlayer.trigger('loading');
 
             castSession.loadMedia(request).then(
@@ -241,6 +249,13 @@
                 clearInterval(this.progressTimer_);
             }
             this.progressTimer_ = setInterval(this.incrementCurrentTime_.bind(this), 1000);
+        },
+
+        stopCasting: function(){
+            if (this.apiSession_) {
+                this.apiSession_.endSession(true);
+                this.apiSession_ = undefined;
+            }
         },
 
         supportsFullScreen: function() {},
