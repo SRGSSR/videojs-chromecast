@@ -1,4 +1,4 @@
-/*! videojs-chromecast - v0.2.1 - 2018-11-13*/
+/*! videojs-chromecast - v0.2.1 - 2018-12-11*/
 (function(window, vjs) {
     'use strict';
 
@@ -72,7 +72,7 @@
                 var  currentTime = remotePlayer.currentTime;
                 localPlayer.trigger('chromecast-stopped');
                 localPlayer.loadTech_('html5');
-                localPlayer.src({ src: src });
+                localPlayer.src({ src: this.currentSource().rawSrc_});
                 localPlayer.currentTime(currentTime);
                 localPlayer.play();
             }else{
